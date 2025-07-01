@@ -3,11 +3,13 @@
 # lua version
 LUA_VERSION=5.1
 # path to lua header files
-LUA_INCDIR=/usr/include/lua${LUA_VERSION}
+LUA_INCDIR=/usr/local/include/luajit-2.1#/usr/include/lua${LUA_VERSION}
 # path to lua library
-LUA_LIBDIR=/usr/lib/x86_64-linux-gnu/
+LUA_LIBDIR=/usr/local/lib#/usr/lib/x86_64-linux-gnu/
 # path to install library
-LUA_CPATH=/usr/lib/lua/${LUA_VERSION}
+LUA_CPATH=/usr/local/lib#/usr/local/lib/lua/${LUA_VERSION}
+# path to pthread library
+PTHREAD_LIBDIR=/usr/lib/x86_64-linux-gnu/
 
 # standard makefile variables
 CC=gcc
@@ -18,7 +20,7 @@ CFLAGS=-c -O2 -Wall -fPIC -I${LUA_INCDIR}
 # LIBFLAG=-bundle -undefined dynamic_lookup
 LIBFLAG=-shared
 #
-LDFLAGS=${LIBFLAG} -L${LUA_LIBDIR} -lpthread 
+LDFLAGS=${LIBFLAG} -L${LUA_LIBDIR} -lluajit-5.1 -L${PTHREAD_LIBDIR} -lpthread
 SOURCES=${SRCDIR}/lpsched.c ${SRCDIR}/luaproc.c
 OBJECTS=${SOURCES:.c=.o}
 
