@@ -20,8 +20,12 @@
 #if (LUA_VERSION_NUM == 501)
 
 #define lua_pushglobaltable( L )    lua_pushvalue( L, LUA_GLOBALSINDEX )
+
+#ifndef LUA_JITLIBNAME
 #define luaL_newlib( L, funcs )     { lua_newtable( L ); \
   luaL_register( L, NULL, funcs ); }
+#endif
+
 #define isequal( L, a, b )          lua_equal( L, a, b )
 #define requiref( L, modname, f, glob ) {\
   lua_pushcfunction( L, f ); /* push module load function */ \
