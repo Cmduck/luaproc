@@ -1,5 +1,5 @@
 -- load luaproc
-luaproc = require "luaproc"
+local luaproc = require "luaproc"
 
 -- create an additional worker
 luaproc.setnumworkers( 2 )

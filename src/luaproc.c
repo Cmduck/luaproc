@@ -11,6 +11,7 @@
 
 #include "luaproc.h"
 #include "lpsched.h"
+#include "luaprocex.h"
 
 #define FALSE 0
 #define TRUE  !FALSE
@@ -925,10 +926,51 @@ static void luaproc_openlualibs( lua_State *L ) {
 
 }
 
+LUALIB_API int luaproc_sendmsg(const char* chan, unsigned int token, unsigned short major, unsigned short minor, const char* msg, unsigned short size)
+{
+    luaproc *lp;
+    /* get exclusive access to recycled lua processes list */
+    pthread_mutex_lock( &mutex_recycle_list );
+
+    /* check if a lua process can be recycled */
+    if ( recyclemax > 0 ) {
+        lp = list_remove( &recycle_list );
+        /* otherwise create a new lua process */
+        if ( lp == NULL ) {
+            lp = luaproc_new( NULL );
+        }
+    } else {
+        lp = luaproc_new( NULL );
+    }
+
+    /* release exclusive access to recycled lua processes list */
+    pthread_mutex_unlock( &mutex_recycle_list );
+    /* init lua process */
+    lp->status = LUAPROC_STATUS_IDLE;
+    lp->args   = 4;
+    lp->chan   = NULL;
+
+    lua_getglobal(lp->lstate, "require");          // stack: ... require
+    lua_pushstring(lp->lstate, "luaproc");         // stack: ... require "luaproc"
+    lua_call(lp->lstate, 1, 1);                     // stack: ... luaproc
+    lua_getfield(lp->lstate, -1, "send");           // stack: ... luaproc send
+    lua_remove(lp->lstate, -2);                     // stack: ... send
+    lua_pushstring(lp->lstate, chan);               // stack: ... send chan
+    lua_pushinteger(lp->lstate, token);             // stack: ... send chan token
+    lua_pushinteger(lp->lstate, major);             // stack: ... send chan token major
+    lua_pushinteger(lp->lstate, minor);             // stack: ... send chan token major minor
+    lua_pushlstring(lp->lstate, msg, size);         // stack: ... send chan token major minor msg
+
+    sched_inc_lpcount();   /* increase active lua process count */
+    sched_queue_proc( lp );  /* schedule lua process for execution */
+
+    return 0;
+}
+
 LUALIB_API int luaopen_luaproc( lua_State *L ) {
 
   /* register luaproc functions */
-  luaL_newlib( L, luaproc_funcs );
+  luaL_newlib( L, luaproc_funcs );                                      // stack(luaproc): L
 
   /* wrap main state inside a lua process */
   mainlp.lstate = L;
@@ -939,21 +981,21 @@ LUALIB_API int luaopen_luaproc( lua_State *L ) {
   /* initialize recycle list */
   list_init( &recycle_list );
   /* initialize channels table and lua_State used to store it */
-  chanls = luaL_newstate();
-  lua_newtable( chanls );
-  lua_setglobal( chanls, LUAPROC_CHANNELS_TABLE );
+  chanls = luaL_newstate();                                             // stack(channel):
+  lua_newtable( chanls );                                               // stack(channel): ... table
+  lua_setglobal( chanls, LUAPROC_CHANNELS_TABLE );                      // stack(channel): ...
   /* create finalizer to join workers when Lua exits */
-  lua_newuserdata( L, 0 );
-  lua_setfield( L, LUA_REGISTRYINDEX, "LUAPROC_FINALIZER_UDATA" );
-  luaL_newmetatable( L, "LUAPROC_FINALIZER_MT" );
-  lua_pushliteral( L, "__gc" );
-  lua_pushcfunction( L, luaproc_join_workers );
-  lua_rawset( L, -3 );
-  lua_pop( L, 1 );
-  lua_getfield( L, LUA_REGISTRYINDEX, "LUAPROC_FINALIZER_UDATA" );
-  lua_getfield( L, LUA_REGISTRYINDEX, "LUAPROC_FINALIZER_MT" );
-  lua_setmetatable( L, -2 );
-  lua_pop( L, 1 );
+  lua_newuserdata( L, 0 );                                              // stack(luaproc): ... L ud
+  lua_setfield( L, LUA_REGISTRYINDEX, "LUAPROC_FINALIZER_UDATA" );      // stack(luaproc): ... L
+  luaL_newmetatable( L, "LUAPROC_FINALIZER_MT" );                       // stack(luaproc): ... L mt
+  lua_pushliteral( L, "__gc" );                                         // stack(luaproc): ... L mt "__gc"
+  lua_pushcfunction( L, luaproc_join_workers );                         // stack(luaproc): ... L mt "__gc" f
+  lua_rawset( L, -3 );                                                  // stack(luaproc): ... L mt  # mt["__gc"] = f
+  lua_pop( L, 1 );                                                      // stack(luaproc): ...
+  lua_getfield( L, LUA_REGISTRYINDEX, "LUAPROC_FINALIZER_UDATA" );      // stack(luaproc): ... L R(LUAPROC_FINALIZER_UDATA)
+  lua_getfield( L, LUA_REGISTRYINDEX, "LUAPROC_FINALIZER_MT" );         // stack(luaproc): ... L R(LUAPROC_FINALIZER_UDATA) mt
+  lua_setmetatable( L, -2 );                                            // stack(luaproc): ... L R(LUAPROC_FINALIZER_UDATA) # R(LUAPROC_FINALIZER_UDATA).__metatable = mt
+  lua_pop( L, 1 );                                                      // stack(luaproc): ... L
   /* initialize scheduler */
   if ( sched_init() == LUAPROC_SCHED_PTHREAD_ERROR ) {
     luaL_error( L, "failed to create worker" );
